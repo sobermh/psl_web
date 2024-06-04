@@ -107,12 +107,30 @@ def handle_client(conn, addr, connection):
     send_thread.daemon = True  # 设置为守护线程，程序退出时自动结束
     send_thread.start()
 
-    # def handle_image_data(packet_id, image_data):
-    #     # 处理图像数据并存入数据库
-    #     with connection.cursor() as cursor:
-    #         query = "INSERT INTO info (data, create_time) VALUES (%s, %s)"
-    #         cursor.execute(query, (binascii.hexlify(image_data), datetime.datetime.today()))
-    #         connection.commit()
+    def handle_image_data(image_data):
+        # 处理图像数据并存入数据库
+        try:
+            with connection.cursor() as cursor:
+                query = "INSERT INTO info (data, create_time) VALUES (%s, %s)"
+                cursor.execute(query, (binascii.hexlify(image_data), datetime.datetime.today()))
+                connection.commit()
+                return True
+        except:
+            return False
+
+    def crc32(packet_data):
+        try:
+            calculated_crc = calculate_crc32(packet_data[:-4], packet_size - 4)
+            received_crc = (packet_data[-4] << 24) | (packet_data[-3] << 16) | (packet_data[-2] << 8) | packet_data[-1]
+            print(received_crc == calculated_crc)
+            if received_crc == calculated_crc:
+                print(int.from_bytes(packet_data[13:15], byteorder='big'))
+                return True
+            else:
+                return False
+        except:
+            return False
+
     flag = 1
     try:
         while True:
@@ -127,22 +145,12 @@ def handle_client(conn, addr, connection):
             if len(packet_data) == 17:
                 packet_size  = int.from_bytes(packet_data[15:17], byteorder='big') + 17 + 4
             if  len(packet_data)== packet_size:
-                calculated_crc = calculate_crc32(packet_data[:-4], packet_size-4)
-                received_crc = (packet_data[-4] << 24) | (packet_data[-3] << 16) | (packet_data[-2] << 8) | packet_data[-1]
-                print(received_crc == calculated_crc)
-                if calculated_crc == received_crc:
+                if crc32(packet_data):
                     img_data += packet_data[17:-4]
-                    print(int.from_bytes(packet_data[13:15], byteorder='big'))                
-
                     if int.from_bytes(packet_data[11:13], byteorder='big') == int.from_bytes(packet_data[13:15], byteorder='big'):
                         print(int.from_bytes(packet_data[11:13], byteorder='big'))
-
-                        with connection.cursor() as cursor:
-                            query = "INSERT INTO info (data,create_time) VALUES (%s,%s)"
-                            cached_img_data = img_data
-                            cursor.execute(query, (binascii.hexlify(cached_img_data),datetime.datetime.today()))
-                            connection.commit()
-                            img_data = b''
+                        handle_image_data(img_data)
+                        img_data = b''
                 packet_size = -1
                 packet_data = b''
         # 关闭连接
