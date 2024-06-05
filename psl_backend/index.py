@@ -11,8 +11,8 @@ from psl_backend.api import api_public, port_used
 from psl_backend.db import connection
 
 BASE_PATH = Path(__file__).resolve().parent
-
-
+MEDIA_PATH = os.path.join(BASE_PATH,"uploads")
+ANNOTATION_PATH = os.path.join(MEDIA_PATH,'annotaiton')
 
 def hello():
     state = {
@@ -27,18 +27,21 @@ def download_file():
     return send_file(path, as_attachment=True)
 
 def upload_file(file,**kwargs):
-    filename = file.filename
-    upload_dir = os.path.normpath(os.path.join(BASE_PATH, 'uploads', str(datetime.now().year), str(datetime.now().month).zfill(2), str(datetime.now().day).zfill(2)))
-    
-    if not os.path.exists(upload_dir):
-        os.makedirs(upload_dir) 
-    filepath = f'{upload_dir}/{str(uuid.uuid4())}.{filename.split(".")[1]}'
+    type = kwargs.get("type",None)
+    uuid_str = str(uuid.uuid4()).replace('-', '_')
+    time_str = f'{str(datetime.now().year)}_{str(datetime.now().month).zfill(2)}_{str(datetime.now().day).zfill(2)}_{uuid_str}' 
+    filename =f'{time_str}_{type}.{file.filename.rsplit(".",1)[1]}'
+    # upload_dir = os.path.normpath(os.path.join(ANNOTATION_PATH))
+    if not os.path.exists(ANNOTATION_PATH):
+        os.makedirs(ANNOTATION_PATH) 
+    filepath = f'{ANNOTATION_PATH}/{filename}'
     file.save(filepath)
+    relative_path = str(Path(filepath).relative_to(BASE_PATH))
     # with connection.cursor() as cursor:
     #     sql = "INSERT INTO files (filename, filepath, upload_time) VALUES (%s, %s, %s)"
     #     cursor.execute(sql, (filename,filepath,datetime.now(),datetime.datetime.now()))
     #     connection.commit()
-    return True,"上传成功",None
+    return True,"上传成功",{"path":relative_path}
 
 
 def plugin_execute(name, func, **kwargs):
@@ -75,7 +78,6 @@ def run_flask_app():
     app.run(host=flask_host, port=flask_port)
 
 
-run_flask_app()
 
 
 

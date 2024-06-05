@@ -8,7 +8,7 @@ from psl_socket.crc32 import calculate_crc32
 # 0x01:
 # 0x02:
 def control_cmd(device_serial_number=b'00000001',command_content=b'\x01'):
-    frame_header = b'\x55'
+    frame_header = b'\x55\xAA'
     device_serial_number = device_serial_number  # 8 bytes ASCII
     channel_number = b'\x00'
     command_type = b'\x00'
@@ -39,7 +39,7 @@ def control_cmd(device_serial_number=b'00000001',command_content=b'\x01'):
 # 0x01:
 # 0x02:
 def read_cmd(device_serial_number=b'00000001',channel_number=b'\x00',command_content=b'\x01'):
-    frame_header = b'\x55'
+    frame_header = b'\x55\xAA'
     device_serial_number = device_serial_number  # 8 bytes ASCII
     channel_number = channel_number
     command_type = b'\x01'
@@ -64,7 +64,7 @@ def read_cmd(device_serial_number=b'00000001',channel_number=b'\x00',command_con
 # 0x00:主模块通道
 # 0x01:从模块通道
 def read_img_cmd(device_serial_number=b'00000001',channel_number=b'\x00'):
-    frame_header = b'\x55'
+    frame_header = b'\x55\xAA'
     device_serial_number = device_serial_number  # 8 bytes ASCII
     channel_number = channel_number
     command_type = b'\x02'

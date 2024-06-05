@@ -1,9 +1,12 @@
 import binascii
+import io
 import socket
 import threading
 import time
 import pymysql.cursors
 import datetime
+
+import requests
 
 
 
@@ -20,7 +23,7 @@ HOST = '0.0.0.0'  # 服务端 IP 地址
 PORT = 9999        # 服务端端口
 
 def read_img_cmd(device_serial_number=b'00000001',channel_number=b'\x00'):
-    frame_header = b'\x55'
+    frame_header = b'\x55\xAA'
     device_serial_number = device_serial_number  # 8 bytes ASCII
     channel_number = channel_number
     command_type = b'\x02'
@@ -39,10 +42,13 @@ def read_img_cmd(device_serial_number=b'00000001',channel_number=b'\x00'):
     return final_packet
 
 
-def send_command_interval(interval):
-    while True:
-        conn.send(read_img_cmd())
-        time.sleep(interval)
+def send_command_interval(conn,interval):
+    try:
+        while True:
+            conn.send(read_img_cmd())
+            time.sleep(interval)
+    except:
+        pass
 
 
 def calculate_crc32(data,size):
@@ -84,11 +90,22 @@ def calculate_crc32(data,size):
     return crc
 
 
-def handle_image_data(image_data,connection):
+def sava_image(hex_image_date,type="face"):
+    # 设置文件名和文件类型
+    files = {'file': ('filename.jpg', hex_image_date, 'image/jpeg')}
+    json_data={
+        "type":type
+    }
+    response = requests.put(url ="http://127.0.0.1:23333/api/upload",files=files,data=json_data)
+    return response
+
+def handle_image_data(hex_image_date,connection):
+    path = sava_image(hex_image_date).json().get("data").get("path")
     try:
         with connection.cursor() as cursor:
-            query = "INSERT INTO info (data, create_time) VALUES (%s, %s)"
-            cursor.execute(query, (binascii.hexlify(image_data), datetime.datetime.today()))
+            query = "INSERT INTO info (data, create_time,path) VALUES (%s, %s,%s)"
+            # cursor.execute(query, (binascii.hexlify(hex_image_date), datetime.datetime.today()))
+            cursor.execute(query, ("", datetime.datetime.today(),path))
             connection.commit()
             return True
     except:
@@ -97,11 +114,11 @@ def handle_image_data(image_data,connection):
 
 def crc32(packet_data):
     try:
-        calculated_crc = calculate_crc32(packet_data[:-4], packet_size - 4)
+        calculated_crc = calculate_crc32(packet_data[:-4], len(packet_data) - 4)
         received_crc = (packet_data[-4] << 24) | (packet_data[-3] << 16) | (packet_data[-2] << 8) | packet_data[-1]
         print(received_crc == calculated_crc)
         if received_crc == calculated_crc:
-            print(int.from_bytes(packet_data[13:15], byteorder='big'))
+            print(int.from_bytes(packet_data[14:16], byteorder='big'))
             return True
         else:
             return False
@@ -125,29 +142,33 @@ def handle_client(conn, addr, connection):
     packet_size = -1    
     img_data = b''      
 
-    send_thread = threading.Thread(target=send_command_interval, args=(20,))
+    send_thread = threading.Thread(target=send_command_interval, args=(conn,20))
     send_thread.daemon = True  # 设置为守护线程，程序退出时自动结束
     send_thread.start()
 
-    flag = 1
+    flag = True
     try:
         while True:
             chunk = conn.recv(1)  
             if not chunk:
                 print(f'客户端 {addr} 断开连接.')
                 break
-            if flag:
-                flag = 0
-                continue
             packet_data += chunk
-            if len(packet_data) == 17:
-                packet_size  = int.from_bytes(packet_data[15:17], byteorder='big') + 17 + 4
+            if flag:
+                if packet_data[-2:] == b'\x55\xAA':
+                    flag = False
+                    packet_data = packet_data[-2:]
+                else:
+                    continue
+            if len(packet_data) == 18:
+                packet_size  = int.from_bytes(packet_data[16:18], byteorder='big') + 18 + 4
             if  len(packet_data)== packet_size:
                 if crc32(packet_data):
-                    img_data += packet_data[17:-4]
-                    if int.from_bytes(packet_data[11:13], byteorder='big') == int.from_bytes(packet_data[13:15], byteorder='big'):
-                        print(int.from_bytes(packet_data[11:13], byteorder='big'))
+                    img_data += packet_data[18:-4]
+                    if int.from_bytes(packet_data[12:14], byteorder='big') == int.from_bytes(packet_data[14:16], byteorder='big'):
+                        print(int.from_bytes(packet_data[12:14], byteorder='big'))
                         handle_image_data(img_data,connection)
+                        flag = 1 
                         img_data = b''
                 packet_size = -1
                 packet_data = b''
@@ -160,24 +181,26 @@ def handle_client(conn, addr, connection):
 
 
 # 创建 TCP socket
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.bind((HOST, PORT))
-    s.listen()
 
-    print(f'服务端正在监听端口 {PORT}...')
+def run_socket_app():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen()
 
-    connection = pymysql.connect(
-        host=MYSQL_HOST,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        cursorclass=pymysql.cursors.DictCursor
-    )
+        print(f'服务端正在监听端口 {PORT}...')
 
-    while True:
-        conn, addr = s.accept()
-        thread = threading.Thread(target=handle_client, args=(conn, addr,connection))
-        thread.start()
+        connection = pymysql.connect(
+            host=MYSQL_HOST,
+            user=MYSQL_USER,
+            password=MYSQL_PASSWORD,
+            database=MYSQL_DATABASE,
+            cursorclass=pymysql.cursors.DictCursor
+        )
+
+        while True:
+            conn, addr = s.accept()
+            thread = threading.Thread(target=handle_client, args=(conn, addr,connection))
+            thread.start()
 
 
     
