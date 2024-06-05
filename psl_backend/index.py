@@ -2,6 +2,7 @@ from datetime import datetime
 import importlib
 import io
 import os
+from pathlib import Path
 import uuid
 import json
 from flask import Flask,request, send_file
@@ -9,7 +10,7 @@ from flask import Flask,request, send_file
 from psl_backend.api import api_public, port_used
 from psl_backend.db import connection
 
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))  # 获取当前文件所在目录作为基础路径
+BASE_PATH = Path(__file__).resolve().parent
 
 
 
@@ -27,7 +28,7 @@ def download_file():
 
 def upload_file(file,**kwargs):
     filename = file.filename
-    upload_dir = os.path.normpath(os.path.join(BASE_PATH, 'uploads', str(datetime.now().year), str(datetime.now().month), str(datetime.now().day)))
+    upload_dir = os.path.normpath(os.path.join(BASE_PATH, 'uploads', str(datetime.now().year), str(datetime.now().month).zfill(2), str(datetime.now().day).zfill(2)))
     
     if not os.path.exists(upload_dir):
         os.makedirs(upload_dir) 
