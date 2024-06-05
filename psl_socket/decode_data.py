@@ -5,6 +5,7 @@ import sys
 from PIL import Image
 
 import pymysql
+import requests
 from psl_socket.crc32 import calculate_crc32
 
 
@@ -37,15 +38,17 @@ print(decompose_data(info))
 def get_img(info):
     # 将十六进制字符串解码为字节数据
     binary_data = binascii.unhexlify(info)
+    file_obj = io.BytesIO(binary_data)
+    # 设置文件名和文件类型
+    files = {'file': ('filename.jpg', binary_data, 'image/jpeg')}
+    response = requests.put(url ="http://192.168.10.121:23333/api/upload",files=files)
 
-    
-
-    # 从字节创建图像
-    image = Image.open(io.BytesIO(binary_data))
-# 保存图像到文件
-    image.save("output_image.jpg")
-    # 显示图像
-    image.show()
+    # # 从字节创建图像
+    # image = Image.open(io.BytesIO(binary_data))
+    # # 保存图像到文件
+    # image.save("output_image.jpg")
+    # # 显示图像
+    # image.show()
 
 # get_img()
 

@@ -38,7 +38,14 @@ def read_img_cmd(device_serial_number=b'00000001',channel_number=b'\x00'):
 
     return final_packet
 
-def  calculate_crc32(data,size):
+
+def send_command_interval(interval):
+    while True:
+        conn.send(read_img_cmd())
+        time.sleep(interval)
+
+
+def calculate_crc32(data,size):
     CRC_TABLE = [
         0x0000, 0x8005, 0x1800f, 0x1000a, 0x3801b, 0x3001e, 0x20014, 0x28011, 0x78033, 0x70036,
         0x6003c, 0x68039, 0x40028, 0x4802d, 0x58027, 0x50022, 0xf8063, 0xf0066, 0xe006c, 0xe8069,
@@ -76,8 +83,31 @@ def  calculate_crc32(data,size):
         crc ^= CRC_TABLE[(da ^ data[i]) & 0xFF]
     return crc
 
-# 注意：crc_init_val 应设置为 0xfefdeaeb
-# crc_init_val = 0xfefdeaeb
+
+def handle_image_data(image_data,connection):
+    try:
+        with connection.cursor() as cursor:
+            query = "INSERT INTO info (data, create_time) VALUES (%s, %s)"
+            cursor.execute(query, (binascii.hexlify(image_data), datetime.datetime.today()))
+            connection.commit()
+            return True
+    except:
+        return False
+
+
+def crc32(packet_data):
+    try:
+        calculated_crc = calculate_crc32(packet_data[:-4], packet_size - 4)
+        received_crc = (packet_data[-4] << 24) | (packet_data[-3] << 16) | (packet_data[-2] << 8) | packet_data[-1]
+        print(received_crc == calculated_crc)
+        if received_crc == calculated_crc:
+            print(int.from_bytes(packet_data[13:15], byteorder='big'))
+            return True
+        else:
+            return False
+    except:
+        return False
+
 
 
 
@@ -91,50 +121,18 @@ def handle_client(conn, addr, connection):
     """
     print(f'客户端 {addr} 已连接.')
     
-    packet_data = b''  # 初始化 packet_data 变量
-    packet_size = -1    # 初始化包的大小
-    img_data = b''      # 初始化图片
+    packet_data = b''  
+    packet_size = -1    
+    img_data = b''      
 
-    # conn.send(read_img_cmd())
-    # 定时发送控制命令的函数
-    def send_command_interval(interval):
-        while True:
-            conn.send(read_img_cmd())
-            time.sleep(interval)
-
-    # 创建发送命令的线程
     send_thread = threading.Thread(target=send_command_interval, args=(20,))
     send_thread.daemon = True  # 设置为守护线程，程序退出时自动结束
     send_thread.start()
 
-    def handle_image_data(image_data):
-        # 处理图像数据并存入数据库
-        try:
-            with connection.cursor() as cursor:
-                query = "INSERT INTO info (data, create_time) VALUES (%s, %s)"
-                cursor.execute(query, (binascii.hexlify(image_data), datetime.datetime.today()))
-                connection.commit()
-                return True
-        except:
-            return False
-
-    def crc32(packet_data):
-        try:
-            calculated_crc = calculate_crc32(packet_data[:-4], packet_size - 4)
-            received_crc = (packet_data[-4] << 24) | (packet_data[-3] << 16) | (packet_data[-2] << 8) | packet_data[-1]
-            print(received_crc == calculated_crc)
-            if received_crc == calculated_crc:
-                print(int.from_bytes(packet_data[13:15], byteorder='big'))
-                return True
-            else:
-                return False
-        except:
-            return False
-
     flag = 1
     try:
         while True:
-            chunk = conn.recv(1)  # 逐字节接收数据
+            chunk = conn.recv(1)  
             if not chunk:
                 print(f'客户端 {addr} 断开连接.')
                 break
@@ -149,11 +147,10 @@ def handle_client(conn, addr, connection):
                     img_data += packet_data[17:-4]
                     if int.from_bytes(packet_data[11:13], byteorder='big') == int.from_bytes(packet_data[13:15], byteorder='big'):
                         print(int.from_bytes(packet_data[11:13], byteorder='big'))
-                        handle_image_data(img_data)
+                        handle_image_data(img_data,connection)
                         img_data = b''
                 packet_size = -1
                 packet_data = b''
-        # 关闭连接
         conn.close()
     except Exception as e:
         conn.close()
@@ -164,14 +161,11 @@ def handle_client(conn, addr, connection):
 
 # 创建 TCP socket
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    # 绑定地址和端口
     s.bind((HOST, PORT))
-    # 开始监听连接
     s.listen()
 
     print(f'服务端正在监听端口 {PORT}...')
 
-    # 连接到 MySQL 数据库
     connection = pymysql.connect(
         host=MYSQL_HOST,
         user=MYSQL_USER,
@@ -181,9 +175,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     )
 
     while True:
-        # 接受客户端连接
         conn, addr = s.accept()
-        # 创建一个新的线程来处理客户端连接
         thread = threading.Thread(target=handle_client, args=(conn, addr,connection))
         thread.start()
 

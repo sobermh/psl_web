@@ -1,5 +1,8 @@
 *.pyc
 __pycache__
 .vscode
+uploads
 
+
+# pycharm
 .idea
